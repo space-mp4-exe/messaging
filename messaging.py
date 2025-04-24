@@ -125,7 +125,7 @@ class SecureMessengerApp:
 
     def server_logic(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('localhost', 12345))
+        server.bind(('0.0.0.0', 12345))  # Accept connections from other devices
         server.listen(1)
         self.output.insert(tk.END, "[+] Waiting for connection on localhost:12345...\n")
         self.conn, addr = server.accept()
