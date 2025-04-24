@@ -65,7 +65,8 @@ class SecureMessengerApp:
         self.root = root
         self.root.title("Secure P2P Messenger")
 
-        self.salt = os.urandom(16)
+        self.salt = self.salt = b'secure-chat-salt1'  # Must be 16 bytes, and same on both ends
+
         self.key = None
         self.conn = None
 
@@ -99,7 +100,7 @@ class SecureMessengerApp:
     def derive_key_from_password(self):
         password = self.pass_entry.get()
         if not password:
-            self.output.insert(tk.END, "❌ Enter a password.\n")
+            self.output.insert(tk.END, "Enter a password.\n")
             return False
         if self.key is None:
             self.key = derive_key(password, self.salt)
