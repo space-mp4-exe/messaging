@@ -93,7 +93,7 @@ class SecureMessengerApp:
         self.send_button.pack()
 
         # Output
-        self.output = scrolledtext.ScrolledText(root, width=60, height=15)
+        self.output = scrolledtext.ScrolledText(root, width=60, height=60)
         self.output.pack()
 
     def derive_key_from_password(self):
