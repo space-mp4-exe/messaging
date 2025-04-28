@@ -65,7 +65,6 @@ class SecureMessengerApp:
         self.root = root
         self.root.title("Secure P2P Messenger")
 
-        self.salt = self.salt = b'secure-chat-salt1'  # Must be 16 bytes, and same on both ends
 
         self.key = None
         self.conn = None
@@ -120,9 +119,8 @@ class SecureMessengerApp:
         self.msg_entry.delete(0, tk.END)
 
     def start_server_thread(self):
-        if not self.derive_key_from_password():
-            return
         threading.Thread(target=self.server_logic, daemon=True).start()
+
 
     def server_logic(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -130,6 +128,12 @@ class SecureMessengerApp:
         server.listen(1)
         self.output.insert(tk.END, "[+] Waiting for connection on localhost:12345...\n")
         self.conn, addr = server.accept()
+
+        self.salt = os.urandom(16)    # Server generates salt
+        self.conn.sendall(self.salt)  # Server sends salt immediately
+        password = self.pass_entry.get()
+        self.key = derive_key(password, self.salt)  # Server derives the key
+
         self.output.insert(tk.END, f"[+] Connected to {addr}\n")
         while True:
             try:
@@ -145,14 +149,18 @@ class SecureMessengerApp:
                 break
 
     def connect_as_client(self):
-        if not self.derive_key_from_password():
-            return
         try:
             host = self.host_entry.get()
             self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.conn.connect((host, 12345))
             self.output.insert(tk.END, f"[+] Connected to server at {host}:12345\n")
+
+            self.salt = self.conn.recv(16)   # Client receives salt
+            password = self.pass_entry.get()
+            self.key = derive_key(password, self.salt)  # Client derives the key
+
             threading.Thread(target=self.listen_to_server, daemon=True).start()
+
         except Exception as e:
             self.output.insert(tk.END, f"❌ Could not connect: {e}\n")
 
