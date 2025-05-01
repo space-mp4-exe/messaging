@@ -38,36 +38,15 @@ def decrypt_message(iv: bytes, ciphertext: bytes, key: bytes) -> str:
     message = unpadder.update(padded) + unpadder.finalize()
     return message.decode()
 
-# --- Networking functions ---
-def start_server(app, host='localhost', port=12345):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen(1)
-    app.output.insert(tk.END, f"[+] Waiting for connection on {host}:{port}...\n")
-    conn, addr = server.accept()
-    app.output.insert(tk.END, f"[+] Connected to {addr}\n")
-    while True:
-        try:
-            data = conn.recv(4096)
-            if not data:
-                break
-            iv = data[:16]
-            ciphertext = data[16:]
-            decrypted = decrypt_message(iv, ciphertext, app.key)
-            app.output.insert(tk.END, f"\n🔐 Received Ciphertext: {ciphertext.hex()}\n")
-            app.output.insert(tk.END, f"🔓 Decrypted: {decrypted}\n\n")
-        except:
-            break
-
 # --- GUI Class ---
 class SecureMessengerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Secure P2P Messenger")
 
-
         self.key = None
         self.conn = None
+        self.message_count = 0  # Count messages to trigger key updates
 
         # Password input
         self.pass_label = tk.Label(root, text="Shared Password:")
@@ -96,43 +75,41 @@ class SecureMessengerApp:
         self.output = scrolledtext.ScrolledText(root, width=60, height=60)
         self.output.pack()
 
-    def derive_key_from_password(self):
-        password = self.pass_entry.get()
-        if not password:
-            self.output.insert(tk.END, "Enter a password.\n")
-            return False
-        if self.key is None:
-            self.key = derive_key(password, self.salt)
-        return True
-
     def send_message(self):
-        if not self.derive_key_from_password():
-            return
         if not self.conn:
-            self.output.insert(tk.END, "❌ Not connected to a peer.\n")
+            self.output.insert(tk.END, "Not connected to a peer.\n")
             return
         message = self.msg_entry.get()
         iv, ciphertext = encrypt_message(message, self.key)
         self.conn.sendall(iv + ciphertext)
-        self.output.insert(tk.END, f"\n📤 Sent Ciphertext: {ciphertext.hex()}\n")
-        self.output.insert(tk.END, f"📝 Plaintext: {message}\n\n")
+        self.output.insert(tk.END, f"\n Sent Ciphertext: {ciphertext.hex()}\n")
         self.msg_entry.delete(0, tk.END)
+
+        self.message_count += 1
+        if self.message_count % 5 == 0:
+            self.rotate_key()
+
+    def rotate_key(self):
+        new_salt = os.urandom(16)
+        self.conn.sendall(b'__ROTATE__' + new_salt)
+        password = self.pass_entry.get()
+        self.key = derive_key(password, new_salt)
+        self.output.insert(tk.END, "\n Encryption key rotated after 5 messages.\n")
 
     def start_server_thread(self):
         threading.Thread(target=self.server_logic, daemon=True).start()
 
-
     def server_logic(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('0.0.0.0', 12345))  # Accept connections from other devices
+        server.bind(('0.0.0.0', 12345))
         server.listen(1)
         self.output.insert(tk.END, "[+] Waiting for connection on localhost:12345...\n")
         self.conn, addr = server.accept()
 
-        self.salt = os.urandom(16)    # Server generates salt
-        self.conn.sendall(self.salt)  # Server sends salt immediately
+        self.salt = os.urandom(16)
+        self.conn.sendall(self.salt)
         password = self.pass_entry.get()
-        self.key = derive_key(password, self.salt)  # Server derives the key
+        self.key = derive_key(password, self.salt)
 
         self.output.insert(tk.END, f"[+] Connected to {addr}\n")
         while True:
@@ -140,11 +117,17 @@ class SecureMessengerApp:
                 data = self.conn.recv(4096)
                 if not data:
                     break
+                if data.startswith(b'__ROTATE__'):
+                    self.salt = data[10:26]
+                    password = self.pass_entry.get()
+                    self.key = derive_key(password, self.salt)
+                    self.output.insert(tk.END, "\n Received new key rotation from peer.\n")
+                    continue
                 iv = data[:16]
                 ciphertext = data[16:]
                 decrypted = decrypt_message(iv, ciphertext, self.key)
-                self.output.insert(tk.END, f"\n🔐 Received Ciphertext: {ciphertext.hex()}\n")
-                self.output.insert(tk.END, f"🔓 Decrypted: {decrypted}\n\n")
+                self.output.insert(tk.END, f"\n Received Ciphertext: {ciphertext.hex()}\n")
+                self.output.insert(tk.END, f" Decrypted: {decrypted}\n\n")
             except:
                 break
 
@@ -155,14 +138,14 @@ class SecureMessengerApp:
             self.conn.connect((host, 12345))
             self.output.insert(tk.END, f"[+] Connected to server at {host}:12345\n")
 
-            self.salt = self.conn.recv(16)   # Client receives salt
+            self.salt = self.conn.recv(16)
             password = self.pass_entry.get()
-            self.key = derive_key(password, self.salt)  # Client derives the key
+            self.key = derive_key(password, self.salt)
 
             threading.Thread(target=self.listen_to_server, daemon=True).start()
 
         except Exception as e:
-            self.output.insert(tk.END, f"❌ Could not connect: {e}\n")
+            self.output.insert(tk.END, f"Could not connect: {e}\n")
 
     def listen_to_server(self):
         while True:
@@ -170,11 +153,17 @@ class SecureMessengerApp:
                 data = self.conn.recv(4096)
                 if not data:
                     break
+                if data.startswith(b'__ROTATE__'):
+                    self.salt = data[10:26]
+                    password = self.pass_entry.get()
+                    self.key = derive_key(password, self.salt)
+                    self.output.insert(tk.END, "\nReceived new key rotation from peer.\n")
+                    continue
                 iv = data[:16]
                 ciphertext = data[16:]
                 decrypted = decrypt_message(iv, ciphertext, self.key)
-                self.output.insert(tk.END, f"\n🔐 Received Ciphertext: {ciphertext.hex()}\n")
-                self.output.insert(tk.END, f"🔓 Decrypted: {decrypted}\n\n")
+                self.output.insert(tk.END, f"\nReceived Ciphertext: {ciphertext.hex()}\n")
+                self.output.insert(tk.END, f"Decrypted: {decrypted}\n\n")
             except:
                 break
 
