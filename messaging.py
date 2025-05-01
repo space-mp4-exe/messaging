@@ -20,17 +20,17 @@ def derive_key(password: str, salt: bytes, iterations: int = 100000) -> bytes:
     return kdf.derive(password.encode())
 
 def encrypt_message(message: str, key: bytes) -> tuple:
-    iv = os.urandom(16)
+    iv = os.urandom(16) # Encrypt message with a random number
     padder = padding.PKCS7(128).padder()
     padded = padder.update(message.encode()) + padder.finalize()
 
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend()) # use CBC to encrypt message
     encryptor = cipher.encryptor()
     ciphertext = encryptor.update(padded) + encryptor.finalize()
     return iv, ciphertext
 
 def decrypt_message(iv: bytes, ciphertext: bytes, key: bytes) -> str:
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend()) # CBC decryption
     decryptor = cipher.decryptor()
     padded = decryptor.update(ciphertext) + decryptor.finalize()
 
@@ -85,10 +85,12 @@ class SecureMessengerApp:
         self.output.insert(tk.END, f"\n Sent Ciphertext: {ciphertext.hex()}\n")
         self.msg_entry.delete(0, tk.END)
 
+        # change key after 5 messages
         self.message_count += 1
         if self.message_count % 5 == 0:
             self.rotate_key()
 
+    # change out keys
     def rotate_key(self):
         new_salt = os.urandom(16)
         self.conn.sendall(b'__ROTATE__' + new_salt)
@@ -100,6 +102,7 @@ class SecureMessengerApp:
         threading.Thread(target=self.server_logic, daemon=True).start()
 
     def server_logic(self):
+        # start a socket to listen to messages
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(('0.0.0.0', 12345))
         server.listen(1)
@@ -131,6 +134,7 @@ class SecureMessengerApp:
             except:
                 break
 
+    # connect to server as a client
     def connect_as_client(self):
         try:
             host = self.host_entry.get()
@@ -147,6 +151,7 @@ class SecureMessengerApp:
         except Exception as e:
             self.output.insert(tk.END, f"Could not connect: {e}\n")
 
+    # wait to recieve messages from server
     def listen_to_server(self):
         while True:
             try:
